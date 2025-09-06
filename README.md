@@ -4,6 +4,9 @@ An intelligent retrieval-augmented generation system that combines Neo4j graph d
 
 ## Architecture
 
+<img width="982" height="452" alt="Screenshot 2025-09-06 at 12 12 07 PM" src="https://github.com/user-attachments/assets/353d8bdc-3af6-4589-8e47-be2585a11831" />
+
+
 **Agentic Multi-Agent System:**
 - **Graph Agent**: Handles structured database queries, counts, and precise entity lookups using Cypher
 - **Vector Agent**: Performs semantic similarity searches for related/similar content discovery
