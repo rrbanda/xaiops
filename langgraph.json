@@ -1,7 +1,7 @@
 {
   "dependencies": ["."],
   "graphs": {
-    "graphrag_supervisor": "./src/app/main.py:app"
+    "xaiops": "./src/app/main.py:app"
   },
   "env": ".env"
 }
