@@ -15,10 +15,15 @@ class VectorSearchClient:
         self._ensure_collection()
     
     def _ensure_collection(self):
-        """Create or get collection."""
+        """Create or get collection, only populate if empty."""
         try:
             self.collection = self.client.get_collection(name=self.collection_name)
-            print(f"Found existing collection: {self.collection_name}")
+            doc_count = self.collection.count()
+            if doc_count == 0:
+                print(f"Collection {self.collection_name} is empty, populating...")
+                self._populate_from_neo4j()
+            else:
+                print(f"Found existing collection: {self.collection_name} with {doc_count} documents")
         except Exception:
             print(f"Creating new collection: {self.collection_name}")
             self.collection = self.client.create_collection(name=self.collection_name)
