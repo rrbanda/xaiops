@@ -2,69 +2,123 @@ import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 
+from langchain_core.tools import tool
+from langgraph.prebuilt import create_react_agent
 from langgraph.graph import StateGraph, START, END, MessagesState
-from app.agents.specialists import create_graph_agent, create_vector_agent
+from app.agents.subgraphs import (
+    create_data_subgraph, create_security_subgraph,
+    create_performance_subgraph, create_compliance_subgraph,
+    create_learning_subgraph, create_orchestrator_subgraph
+)
+from app.llm_config import get_llm
+
+@tool
+def route_to_data_domain(query: str) -> str:
+    """Route queries needing structured data and similarity analysis."""
+    return f"Routing to data domain: {query}"
+
+@tool
+def route_to_security_domain(query: str) -> str:
+    """Route security and vulnerability queries."""
+    return f"Routing to security domain: {query}"
+
+@tool
+def route_to_performance_domain(query: str) -> str:
+    """Route performance and monitoring queries."""
+    return f"Routing to performance domain: {query}"
+
+@tool
+def route_to_compliance_domain(query: str) -> str:
+    """Route compliance and audit queries."""
+    return f"Routing to compliance domain: {query}"
+
+@tool
+def route_to_learning_domain(query: str) -> str:
+    """Route to learning analysis for knowledge extraction."""
+    return f"Routing to learning domain: {query}"
+
+@tool
+def route_to_orchestrator_domain(query: str) -> str:
+    """Route complex multi-domain queries requiring cross-domain analysis."""
+    return f"Routing to orchestrator domain: {query}"
 
 def create_supervisor():
-    """Create supervisor workflow managing specialized agents."""
+    """Enhanced supervisor with cross-domain orchestration capability."""
     
-    graph_agent = create_graph_agent()
-    vector_agent = create_vector_agent()
+    supervisor_agent = create_react_agent(
+        model=get_llm(),
+        tools=[
+            route_to_data_domain, route_to_security_domain,
+            route_to_performance_domain, route_to_compliance_domain,
+            route_to_learning_domain, route_to_orchestrator_domain
+        ],
+        prompt=(
+            "You are an infrastructure supervisor that routes queries to specialized domains.\n\n"
+            "DOMAIN ROUTING:\n"
+            "- route_to_data_domain: Server lists, counts, backup configs, general data queries\n"
+            "- route_to_security_domain: Vulnerabilities, threats, security analysis\n"
+            "- route_to_performance_domain: Performance monitoring, optimization, capacity\n"
+            "- route_to_compliance_domain: Audits, regulatory compliance, policies\n"
+            "- route_to_learning_domain: Extract patterns, analyze conversations, improve knowledge\n"
+            "- route_to_orchestrator_domain: Complex queries spanning multiple domains, holistic analysis\n\n"
+            "Use orchestrator for queries like 'comprehensive infrastructure audit', 'root cause analysis',\n"
+            "'impact assessment', or when multiple domains are clearly involved.\n"
+            "Choose the most appropriate domain based on query context."
+        ),
+        name="supervisor",
+    )
     
-    def route_question(state):
-        """Simple routing based on keywords with better error handling."""
-        messages = state["messages"]
+    def route_to_subgraph(state):
+        """Route to appropriate domain subgraph."""
+        last_message = state["messages"][-1]
         
-        # Handle different message content types
-        last_message = messages[-1]
-        if hasattr(last_message, 'content'):
-            content = last_message.content
-        else:
-            content = last_message.get('content', '')
+        if hasattr(last_message, 'tool_calls') and last_message.tool_calls:
+            tool_name = last_message.tool_calls[0]["name"]
+            if "data_domain" in tool_name:
+                return "data_domain"
+            elif "security_domain" in tool_name:
+                return "security_domain"
+            elif "performance_domain" in tool_name:
+                return "performance_domain"
+            elif "compliance_domain" in tool_name:
+                return "compliance_domain"
+            elif "learning_domain" in tool_name:
+                return "learning_domain"
+            elif "orchestrator_domain" in tool_name:
+                return "orchestrator_domain"
         
-        # Ensure content is a string
-        if isinstance(content, list):
-            content = ' '.join(str(item) for item in content)
-        elif not isinstance(content, str):
-            content = str(content)
-        
-        question = content.lower()
-        
-        # Simple keyword routing
-        if any(word in question for word in ["count", "show", "list", "how many"]):
-            print(f"Routing to graph_agent: detected structured query")
-            return "graph_agent"
-        elif any(word in question for word in ["similar", "related", "like", "find"]):
-            print(f"Routing to vector_agent: detected similarity query") 
-            return "vector_agent"
-        else:
-            print(f"Default routing to graph_agent")
-            return "graph_agent"
+        return "data_domain"  # Default
     
-    # Build workflow
+    # Main workflow with all subgraphs including orchestrator
     workflow = StateGraph(MessagesState)
-    workflow.add_node("graph_agent", graph_agent)
-    workflow.add_node("vector_agent", vector_agent)
+    workflow.add_node("supervisor", supervisor_agent)
+    workflow.add_node("data_domain", create_data_subgraph())
+    workflow.add_node("security_domain", create_security_subgraph())
+    workflow.add_node("performance_domain", create_performance_subgraph())
+    workflow.add_node("compliance_domain", create_compliance_subgraph())
+    workflow.add_node("learning_domain", create_learning_subgraph())
+    workflow.add_node("orchestrator_domain", create_orchestrator_subgraph())
     
+    workflow.add_edge(START, "supervisor")
     workflow.add_conditional_edges(
-        START,
-        route_question,
+        "supervisor",
+        route_to_subgraph,
         {
-            "graph_agent": "graph_agent",
-            "vector_agent": "vector_agent"
+            "data_domain": "data_domain",
+            "security_domain": "security_domain", 
+            "performance_domain": "performance_domain",
+            "compliance_domain": "compliance_domain",
+            "learning_domain": "learning_domain",
+            "orchestrator_domain": "orchestrator_domain"
         }
     )
     
-    workflow.add_edge("graph_agent", END)
-    workflow.add_edge("vector_agent", END)
+    # All subgraphs end the workflow
+    workflow.add_edge("data_domain", END)
+    workflow.add_edge("security_domain", END)
+    workflow.add_edge("performance_domain", END)
+    workflow.add_edge("compliance_domain", END)
+    workflow.add_edge("learning_domain", END)
+    workflow.add_edge("orchestrator_domain", END)
     
     return workflow.compile()
-
-if __name__ == "__main__":
-    supervisor = create_supervisor()
-    
-    result = supervisor.invoke({
-        "messages": [{"role": "user", "content": "Count all servers"}]
-    })
-    
-    print(f"Test result: {result['messages'][-1].content}")

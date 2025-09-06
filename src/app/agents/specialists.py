@@ -1,13 +1,41 @@
-from .graph_agent import create_graph_agent
-from .vector_agent import create_vector_agent
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 
-# Add the new specialized agents
+from langgraph.prebuilt import create_react_agent
+from app.llm_config import get_llm
+from app.tools.agent_tools import neo4j_query_tool, vector_search_tool
+
+def create_graph_agent():
+    """Create graph database specialist agent."""
+    return create_react_agent(
+        model=get_llm(),
+        tools=[neo4j_query_tool],
+        prompt=(
+            "You are a graph database expert specializing in infrastructure queries.\n"
+            "Use Neo4j queries to find structured data about servers, services, and relationships.\n"
+            "Generate clean Cypher queries and interpret results clearly.\n"
+            "Focus on counts, lists, specific lookups, and relationship traversals."
+        ),
+        name="graph_agent",
+    )
+
+def create_vector_agent():
+    """Create vector similarity specialist agent.""" 
+    return create_react_agent(
+        model=get_llm(),
+        tools=[vector_search_tool],
+        prompt=(
+            "You are a semantic search expert specializing in similarity analysis.\n"
+            "Use vector search to find related configurations, patterns, and similar infrastructure.\n"
+            "Focus on 'similar to', 'related', 'like', and pattern matching queries.\n"
+            "Provide context about why items are similar."
+        ),
+        name="vector_agent",
+    )
+
 def create_security_agent():
     """Create security specialist agent."""
-    from langgraph.prebuilt import create_react_agent
-    from app.llm_config import get_llm
-    from app.tools.agent_tools import neo4j_query_tool, vector_search_tool
-    
     return create_react_agent(
         model=get_llm(),
         tools=[neo4j_query_tool, vector_search_tool],
@@ -23,10 +51,6 @@ def create_security_agent():
 
 def create_performance_agent():
     """Create performance specialist agent."""
-    from langgraph.prebuilt import create_react_agent
-    from app.llm_config import get_llm
-    from app.tools.agent_tools import neo4j_query_tool, vector_search_tool
-    
     return create_react_agent(
         model=get_llm(),
         tools=[neo4j_query_tool, vector_search_tool],
@@ -42,10 +66,6 @@ def create_performance_agent():
 
 def create_compliance_agent():
     """Create compliance specialist agent."""
-    from langgraph.prebuilt import create_react_agent
-    from app.llm_config import get_llm
-    from app.tools.agent_tools import neo4j_query_tool, vector_search_tool
-    
     return create_react_agent(
         model=get_llm(),
         tools=[neo4j_query_tool, vector_search_tool],
@@ -58,11 +78,3 @@ def create_compliance_agent():
         ),
         name="compliance_agent",
     )
-
-__all__ = [
-    "create_graph_agent", 
-    "create_vector_agent", 
-    "create_security_agent", 
-    "create_performance_agent", 
-    "create_compliance_agent"
-]
