@@ -113,3 +113,6 @@ models/
 # Documentation builds
 docs/_build/
 site/
+
+# Ignore LangGraph API keys and credentials
+.langgraph_api

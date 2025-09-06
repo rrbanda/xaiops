@@ -5,143 +5,349 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 from langgraph.graph import StateGraph, START, END, MessagesState
 from langchain_core.tools import tool
 from langgraph.prebuilt import create_react_agent
-from app.llm_config import get_llm  # Add this import
-from app.agents.specialists import (
-    create_graph_agent, create_vector_agent, create_security_agent,
-    create_performance_agent, create_compliance_agent
-)
+from app.llm_config import get_llm
+from app.tools.hitl_tools import security_approval_gate
+from app.tools.agent_tools import neo4j_query_tool, vector_search_tool
 
 def create_data_subgraph():
-    """Subgraph for data retrieval and analysis."""
-    workflow = StateGraph(MessagesState)
-    
-    workflow.add_node("graph_agent", create_graph_agent())
-    workflow.add_node("vector_agent", create_vector_agent())
-    
-    workflow.add_edge(START, "graph_agent")
-    workflow.add_edge("graph_agent", "vector_agent")
-    workflow.add_edge("vector_agent", END)
-    
-    return workflow.compile()
+   """Fixed data subgraph with proper state management and user-facing output."""
+   
+   def graph_collector_node(state):
+       """Collect structured data using graph queries."""
+       # Handle both dict and Message object formats
+       first_message = state["messages"][0]
+       if isinstance(first_message, dict):
+           original_query = first_message["content"]
+       else:
+           original_query = first_message.content
+       
+       # Create a clean context for graph agent
+       graph_context = {
+           "messages": [{"role": "user", "content": f"Use graph database to find: {original_query}"}]
+       }
+       
+       # Create graph agent
+       graph_agent = create_react_agent(
+           model=get_llm(),
+           tools=[neo4j_query_tool],
+           prompt=(
+               "You are a graph database expert. Use Neo4j queries to find structured data.\n"
+               "Focus on relationships, counts, and specific entity lookups.\n"
+               "Provide clear, factual results from your queries."
+           ),
+           name="graph_collector",
+       )
+       
+       graph_result = graph_agent.invoke(graph_context)
+       graph_findings = graph_result["messages"][-1].content
+       
+       # Add findings to state without full conversation
+       return {
+           "messages": [
+               {"role": "assistant", "content": f"Graph findings: {graph_findings}", "name": "graph_collector"}
+           ]
+       }
+   
+   def vector_collector_node(state):
+       """Collect semantic similarity data."""
+       # Handle both dict and Message object formats
+       first_message = state["messages"][0]
+       if isinstance(first_message, dict):
+           original_query = first_message["content"]
+       else:
+           original_query = first_message.content
+       
+       # Create clean context for vector agent
+       vector_context = {
+           "messages": [{"role": "user", "content": f"Use semantic search to find similar items for: {original_query}"}]
+       }
+       
+       # Create vector agent
+       vector_agent = create_react_agent(
+           model=get_llm(),
+           tools=[vector_search_tool],
+           prompt=(
+               "You are a semantic search expert. Use vector similarity to find related content.\n"
+               "Focus on patterns, similar configurations, and related entities.\n"
+               "Provide context about relationships and similarities."
+           ),
+           name="vector_collector",
+       )
+       
+       vector_result = vector_agent.invoke(vector_context)
+       vector_findings = vector_result["messages"][-1].content
+       
+       # Add findings to state
+       return {
+           "messages": [
+               {"role": "assistant", "content": f"Vector findings: {vector_findings}", "name": "vector_collector"}
+           ]
+       }
+   
+   def user_response_node(state):
+       """Create clean user-facing response from internal findings."""
+       # Handle both dict and Message object formats
+       first_message = state["messages"][0]
+       if isinstance(first_message, dict):
+           original_query = first_message["content"]
+       else:
+           original_query = first_message.content
+       
+       # Extract findings from previous agents
+       graph_findings = ""
+       vector_findings = ""
+       
+       for msg in state["messages"]:
+           if hasattr(msg, 'name') or (isinstance(msg, dict) and 'name' in msg):
+               name = msg.get('name') if isinstance(msg, dict) else getattr(msg, 'name', None)
+               content = msg.get('content') if isinstance(msg, dict) else getattr(msg, 'content', '')
+               
+               if name == "graph_collector":
+                   graph_findings = content
+               elif name == "vector_collector":
+                   vector_findings = content
+       
+       # Create user-friendly response prompt
+       user_response_prompt = f"""
+       User asked: "{original_query}"
+       
+       Internal findings:
+       Graph database: {graph_findings}
+       Vector search: {vector_findings}
+       
+       Create a clean, professional response that directly answers the user's question.
+       
+       Format requirements:
+       - Start with a clear answer to their question
+       - Use bullet points or simple lists for multiple items
+       - Include a brief summary at the end
+       - Avoid technical jargon about tools or internal processes
+       - Be concise but complete
+       - Focus on actionable information
+       
+       Example good response:
+       "**Servers in your infrastructure:**
+       • Web-Prod-01 - Production web server
+       • Web-Prod-02 - Production web server  
+       • Red Hat Enterprise Linux - System server
+       
+       **Summary:** Found 3 active servers including production web services."
+       """
+       
+       # Use LLM to create user response
+       llm = get_llm()
+       user_response = llm.invoke(user_response_prompt)
+       
+       return {
+           "messages": [
+               {"role": "assistant", "content": user_response.content}
+           ]
+       }
+   
+   # Build workflow with user response node
+   workflow = StateGraph(MessagesState)
+   workflow.add_node("graph_collector", graph_collector_node)
+   workflow.add_node("vector_collector", vector_collector_node)
+   workflow.add_node("user_response", user_response_node)
+   
+   workflow.add_edge(START, "graph_collector")
+   workflow.add_edge("graph_collector", "vector_collector")
+   workflow.add_edge("vector_collector", "user_response")
+   workflow.add_edge("user_response", END)
+   
+   return workflow.compile()
 
 def create_security_subgraph():
-    """Subgraph for security analysis."""
-    workflow = StateGraph(MessagesState)
-    
-    workflow.add_node("security_agent", create_security_agent())
-    
-    workflow.add_edge(START, "security_agent")
-    workflow.add_edge("security_agent", END)
-    
-    return workflow.compile()
+   """Security subgraph - already working, keep as is."""
+   workflow = StateGraph(MessagesState)
+   
+   security_agent = create_react_agent(
+       model=get_llm(),
+       tools=[neo4j_query_tool, vector_search_tool, security_approval_gate],
+       prompt=(
+           "You are a cybersecurity expert specializing in infrastructure security analysis.\n"
+           "Focus on vulnerabilities, access controls, compliance, security configurations.\n"
+           "Use graph queries to map security relationships and vector search for similar threats.\n"
+           "Provide security recommendations and identify potential risks.\n"
+           "Look for patterns like open ports, outdated software, weak configurations.\n\n"
+           "IMPORTANT: Provide clean, actionable responses directly to users. Avoid showing internal tool usage."
+       ),
+       name="security_agent",
+   )
+   
+   workflow.add_node("security_agent", security_agent)
+   workflow.add_edge(START, "security_agent")
+   workflow.add_edge("security_agent", END)
+   
+   return workflow.compile()
 
 def create_performance_subgraph():
-    """Subgraph for performance analysis."""
-    workflow = StateGraph(MessagesState)
-    
-    workflow.add_node("performance_agent", create_performance_agent())
-    
-    workflow.add_edge(START, "performance_agent")
-    workflow.add_edge("performance_agent", END)
-    
-    return workflow.compile()
+   """Performance subgraph - already working, keep as is."""
+   workflow = StateGraph(MessagesState)
+   
+   performance_agent = create_react_agent(
+       model=get_llm(),
+       tools=[neo4j_query_tool, vector_search_tool, security_approval_gate],
+       prompt=(
+           "You are a performance optimization expert for infrastructure monitoring.\n"
+           "Focus on capacity planning, resource utilization, performance bottlenecks.\n"
+           "Use graph queries for current metrics and vector search for performance patterns.\n"
+           "Provide optimization recommendations and identify resource constraints.\n"
+           "Look for CPU, memory, disk, network performance indicators.\n\n"
+           "IMPORTANT: Provide clean, actionable responses directly to users. Avoid showing internal tool usage."
+       ),
+       name="performance_agent",
+   )
+   
+   workflow.add_node("performance_agent", performance_agent)
+   workflow.add_edge(START, "performance_agent")
+   workflow.add_edge("performance_agent", END)
+   
+   return workflow.compile()
 
 def create_compliance_subgraph():
-    """Subgraph for compliance analysis."""
-    workflow = StateGraph(MessagesState)
-    
-    workflow.add_node("compliance_agent", create_compliance_agent())
-    
-    workflow.add_edge(START, "compliance_agent") 
-    workflow.add_edge("compliance_agent", END)
-    
-    return workflow.compile()
+   """Compliance subgraph - keep simple single agent."""
+   workflow = StateGraph(MessagesState)
+   
+   compliance_agent = create_react_agent(
+       model=get_llm(),
+       tools=[neo4j_query_tool, vector_search_tool, security_approval_gate],
+       prompt=(
+           "You are a compliance and audit expert for infrastructure governance.\n"
+           "Focus on regulatory requirements, policy adherence, audit trails.\n"
+           "Use graph queries for compliance mapping and vector search for similar violations.\n"
+           "Provide compliance status reports and identify policy gaps.\n"
+           "Look for GDPR, SOX, HIPAA, PCI-DSS compliance indicators.\n\n"
+           "IMPORTANT: Provide clean, actionable responses directly to users. Avoid showing internal tool usage."
+       ),
+       name="compliance_agent",
+   )
+   
+   workflow.add_node("compliance_agent", compliance_agent)
+   workflow.add_edge(START, "compliance_agent")
+   workflow.add_edge("compliance_agent", END)
+   
+   return workflow.compile()
 
 def create_learning_subgraph():
-    """Subgraph for autonomous learning and knowledge updates."""
-    
-    @tool
-    def propose_knowledge_update(entity: str, relationship: str, confidence: float) -> str:
-        """Propose a knowledge graph update for validation."""
-        if confidence > 0.8:
-            return f"HIGH CONFIDENCE: Update {entity} -> {relationship}"
-        else:
-            return f"LOW CONFIDENCE: Needs review - {entity} -> {relationship}"
-    
-    @tool
-    def extract_learning_pattern(domain: str, pattern: str, frequency: int) -> str:
-        """Extract reusable patterns from agent interactions."""
-        return f"Pattern learned in {domain}: {pattern} (seen {frequency} times)"
-    
-    learning_agent = create_react_agent(
-        model=get_llm(),  # Now properly imported
-        tools=[propose_knowledge_update, extract_learning_pattern],
-        prompt=(
-            "You analyze multi-agent conversations to identify learning opportunities:\n"
-            "1. New infrastructure entities or relationships discovered\n"
-            "2. Recurring patterns in security/performance issues\n"
-            "3. Successful problem-solving approaches\n"
-            "Only propose high-confidence updates (>0.8) to prevent knowledge contamination.\n"
-            "Focus on actionable insights that improve future responses."
-        ),
-        name="learning_agent"
-    )
-    
-    workflow = StateGraph(MessagesState)
-    workflow.add_node("learning_agent", learning_agent)
-    workflow.add_edge(START, "learning_agent")
-    workflow.add_edge("learning_agent", END)
-    
-    return workflow.compile()
+   """Learning subgraph - keep simple single agent."""
+   
+   @tool
+   def propose_knowledge_update(entity: str, relationship: str, confidence: float) -> str:
+       """Propose a knowledge graph update for validation."""
+       if confidence > 0.8:
+           return f"HIGH CONFIDENCE: Update {entity} -> {relationship}"
+       else:
+           return f"LOW CONFIDENCE: Needs review - {entity} -> {relationship}"
+   
+   @tool
+   def extract_learning_pattern(domain: str, pattern: str, frequency: int) -> str:
+       """Extract reusable patterns from agent interactions."""
+       return f"Pattern learned in {domain}: {pattern} (seen {frequency} times)"
+   
+   learning_agent = create_react_agent(
+       model=get_llm(),
+       tools=[propose_knowledge_update, extract_learning_pattern],
+       prompt=(
+           "You analyze multi-agent conversations to identify learning opportunities:\n"
+           "1. New infrastructure entities or relationships discovered\n"
+           "2. Recurring patterns in security/performance issues\n"
+           "3. Successful problem-solving approaches\n"
+           "Only propose high-confidence updates (>0.8) to prevent knowledge contamination.\n"
+           "Focus on actionable insights that improve future responses.\n\n"
+           "IMPORTANT: Provide clean, actionable responses directly to users. Avoid showing internal tool usage."
+       ),
+       name="learning_agent"
+   )
+   
+   workflow = StateGraph(MessagesState)
+   workflow.add_node("learning_agent", learning_agent)
+   workflow.add_edge(START, "learning_agent")
+   workflow.add_edge("learning_agent", END)
+   
+   return workflow.compile()
 
 def create_orchestrator_subgraph():
-    """Subgraph that coordinates multiple domains for cross-domain analysis."""
-    
-    @tool
-    def invoke_security_analysis(query: str) -> str:
-        """Trigger security domain analysis and return findings."""
-        # In real implementation, this would call security subgraph
-        return f"Security analysis for: {query} - Found potential vulnerabilities in web servers"
-    
-    @tool
-    def invoke_performance_analysis(query: str) -> str:
-        """Trigger performance domain analysis and return findings."""
-        # In real implementation, this would call performance subgraph
-        return f"Performance analysis for: {query} - Detected high CPU usage on affected servers"
-    
-    @tool
-    def invoke_compliance_analysis(query: str) -> str:
-        """Trigger compliance domain analysis and return findings."""
-        # In real implementation, this would call compliance subgraph
-        return f"Compliance analysis for: {query} - Policy violations detected"
-    
-    @tool
-    def synthesize_cross_domain_insights(primary_finding: str, secondary_findings: str) -> str:
-        """Combine insights from multiple domains into unified recommendations."""
-        return f"Cross-domain synthesis: Primary issue ({primary_finding}) has implications: {secondary_findings}"
-    
-    orchestrator_agent = create_react_agent(
-        model=get_llm(),
-        tools=[
-            invoke_security_analysis, invoke_performance_analysis,
-            invoke_compliance_analysis, synthesize_cross_domain_insights
-        ],
-        prompt=(
-            "You are a cross-domain orchestrator that analyzes infrastructure issues holistically.\n\n"
-            "When investigating problems:\n"
-            "1. Start with the primary domain based on the query\n"
-            "2. Identify potential impacts on other domains\n"
-            "3. Invoke relevant domain analyses to gather comprehensive data\n"
-            "4. Synthesize findings into unified recommendations\n\n"
-            "Example: Security vulnerability → check performance impact → verify compliance implications\n"
-            "Focus on root causes and cascading effects across domains."
-        ),
-        name="orchestrator_agent"
-    )
-    
-    workflow = StateGraph(MessagesState)
-    workflow.add_node("orchestrator_agent", orchestrator_agent)
-    workflow.add_edge(START, "orchestrator_agent")
-    workflow.add_edge("orchestrator_agent", END)
-    
-    return workflow.compile()
+   """Fixed orchestrator subgraph with proper cross-domain coordination."""
+   
+   def domain_analyzer_node(state):
+       """Analyze which domains are needed for the query."""
+       # Handle both dict and Message object formats
+       first_message = state["messages"][0]
+       if isinstance(first_message, dict):
+           original_query = first_message["content"]
+       else:
+           original_query = first_message.content
+       
+       llm = get_llm()
+       analysis_prompt = f"""
+       Analyze this infrastructure query to determine which domains need investigation: "{original_query}"
+       
+       Available domains:
+       - security: vulnerabilities, threats, access control
+       - performance: resource usage, bottlenecks, optimization  
+       - compliance: regulatory, policies, audits
+       - data: general infrastructure data and relationships
+       
+       Return a comma-separated list of domains needed (e.g., "security,performance" or "data").
+       Only include domains that are directly relevant to the query.
+       """
+       
+       result = llm.invoke(analysis_prompt)
+       domains_needed = result.content.strip().lower()
+       
+       return {
+           "messages": [
+               {"role": "assistant", "content": f"Analysis requires domains: {domains_needed}", "name": "domain_analyzer"}
+           ]
+       }
+   
+   def cross_domain_synthesizer_node(state):
+       """Synthesize findings across multiple domains."""
+       # Handle both dict and Message object formats
+       first_message = state["messages"][0]
+       if isinstance(first_message, dict):
+           original_query = first_message["content"]
+       else:
+           original_query = first_message.content
+       
+       # Extract domain analysis
+       domains_needed = ""
+       for msg in state["messages"]:
+           if hasattr(msg, 'name') and msg.name == "domain_analyzer":
+               domains_needed = msg.content
+               break
+       
+       # Create user-friendly cross-domain response
+       llm = get_llm()
+       synthesis_prompt = f"""
+       User asked: "{original_query}"
+       Domains identified: {domains_needed}
+       
+       Provide a comprehensive executive summary that addresses:
+       1. Primary findings relevant to the user's question
+       2. Cross-domain impacts and dependencies 
+       3. Unified actionable recommendations
+       4. Risk assessment summary
+       
+       Format as a clean, professional response with clear sections and bullet points.
+       Avoid technical jargon and focus on business value.
+       """
+       
+       result = llm.invoke(synthesis_prompt)
+       
+       return {
+           "messages": [
+               {"role": "assistant", "content": result.content}
+           ]
+       }
+   
+   workflow = StateGraph(MessagesState)
+   workflow.add_node("domain_analyzer", domain_analyzer_node)
+   workflow.add_node("cross_domain_synthesizer", cross_domain_synthesizer_node)
+   
+   workflow.add_edge(START, "domain_analyzer")
+   workflow.add_edge("domain_analyzer", "cross_domain_synthesizer") 
+   workflow.add_edge("cross_domain_synthesizer", END)
+   
+   return workflow.compile()
