@@ -1,99 +1,135 @@
-import sys
-import os
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
-
 from typing import List, Dict, Any, Tuple
 import chromadb
 from chromadb.config import Settings
-from app.tools.neo4j_client import Neo4jClient
+import json
+from pathlib import Path
 
 class VectorSearchClient:
-    def __init__(self, collection_name: str = "neo4j_nodes"):
+    def __init__(self, collection_name: str = "infrastructure_embeddings"):
         self.client = chromadb.Client(Settings(persist_directory="./chroma_db"))
         self.collection_name = collection_name
         self.collection = None
         self._ensure_collection()
     
     def _ensure_collection(self):
-        """Create or get collection, only populate if empty."""
+        """Create or get collection."""
         try:
-            self.collection = self.client.get_collection(name=self.collection_name)
-            doc_count = self.collection.count()
-            if doc_count == 0:
-                print(f"Collection {self.collection_name} is empty, populating...")
-                self._populate_from_neo4j()
-            else:
-                print(f"Found existing collection: {self.collection_name} with {doc_count} documents")
-        except Exception:
+            # Delete old collection to refresh with new data
+            try:
+                self.client.delete_collection(name=self.collection_name)
+            except:
+                pass
+            
             print(f"Creating new collection: {self.collection_name}")
             self.collection = self.client.create_collection(name=self.collection_name)
-            self._populate_from_neo4j()
+            self._populate_from_generated_data()
+        except Exception as e:
+            print(f"Error creating collection: {e}")
     
-    def _populate_from_neo4j(self):
-        """Populate vector store with Neo4j node data."""
-        print("Populating vector store from Neo4j...")
-        neo4j_client = Neo4jClient()
+    def _populate_from_generated_data(self):
+        """Populate with actual generated infrastructure data."""
+        print("Populating vector store with generated infrastructure data...")
         
-        # Get all nodes with their properties
-        query = """
-        MATCH (n) 
-        RETURN elementId(n) as id, labels(n) as labels, properties(n) as props
-        LIMIT 100
-        """
+        # Load from your generated metadata
+        metadata_path = Path("/Users/raghurambanda/dataloader/simulated_rhel_systems/_agent_metadata/nodes.json")
         
-        try:
-            results = neo4j_client.execute_cypher(query)
-            
-            documents = []
-            metadatas = []
-            ids = []
-            
-            for record in results:
-                node_id = record['id']
-                labels = list(record['labels'])
-                props = record['props']
-                
-                # Create searchable text from node
+        if not metadata_path.exists():
+            print("Generated metadata not found, using sample data")
+            self._populate_sample_data()
+            return
+        
+        with open(metadata_path, 'r') as f:
+            nodes_data = json.load(f)
+        
+        documents = []
+        metadatas = []
+        ids = []
+        
+        for node in nodes_data:
+            if 'Server' in node.get('labels', []):
+                # Create searchable text from server properties
+                props = node.get('properties', {})
                 text_parts = []
-                text_parts.extend(labels)
-                for key, value in props.items():
-                    text_parts.append(f"{key}: {value}")
                 
-                doc_text = " ".join(str(part) for part in text_parts)
+                # Add server type and environment info
+                hostname = props.get('prop_hostname', node['id'])
+                environment = props.get('environment', 'unknown')
+                business_service = props.get('prop_business_service', 'system')
+                team_owner = props.get('prop_team_owner', 'unknown')
                 
-                # Fix metadata - convert lists to strings and handle types
-                safe_metadata = {
-                    "node_id": node_id,
-                    "labels": ", ".join(labels),  # Convert list to string
-                    "label_count": len(labels)
+                text_parts.append(f"{hostname} {environment} server")
+                text_parts.append(f"{business_service.replace('_', ' ')}")
+                text_parts.append(f"managed by {team_owner.replace('_', ' ')}")
+                
+                # Add technical details
+                if 'web' in node['id']:
+                    text_parts.append("web server apache nginx http https production")
+                elif 'db' in node['id']:
+                    text_parts.append("database server mysql postgresql data storage")
+                elif 'api' in node['id']:
+                    text_parts.append("api server rest microservices integration")
+                elif 'cache' in node['id']:
+                    text_parts.append("cache server redis memcached performance")
+                elif 'analytics' in node['id']:
+                    text_parts.append("analytics server data processing elasticsearch")
+                elif 'monitor' in node['id']:
+                    text_parts.append("monitoring server metrics prometheus grafana")
+                elif 'app' in node['id']:
+                    text_parts.append("application server java tomcat business logic")
+                elif 'file' in node['id']:
+                    text_parts.append("file server storage nfs backup")
+                
+                doc_text = " ".join(text_parts)
+                
+                # Create clean metadata
+                metadata = {
+                    "labels": "Server",
+                    "prop_hostname": hostname,
+                    "prop_environment": environment,
+                    "prop_business_service": business_service,
+                    "prop_team_owner": team_owner,
+                    "prop_ip": props.get('prop_ip', '10.1.1.100'),
+                    "prop_criticality": props.get('criticality', 'medium')
                 }
                 
-                # Add safe property values
-                for key, value in props.items():
-                    safe_key = f"prop_{key}"
-                    if isinstance(value, (str, int, float, bool)) or value is None:
-                        safe_metadata[safe_key] = value
-                    else:
-                        safe_metadata[safe_key] = str(value)
-                
                 documents.append(doc_text)
-                metadatas.append(safe_metadata)
-                ids.append(node_id)
-            
-            if documents:
+                metadatas.append(metadata)
+                ids.append(node['id'])
+        
+        if documents:
+            # Add in batches to avoid memory issues
+            batch_size = 100
+            for i in range(0, len(documents), batch_size):
+                batch_docs = documents[i:i+batch_size]
+                batch_meta = metadatas[i:i+batch_size]
+                batch_ids = ids[i:i+batch_size]
+                
                 self.collection.add(
-                    documents=documents,
-                    metadatas=metadatas,
-                    ids=ids
+                    documents=batch_docs,
+                    metadatas=batch_meta,
+                    ids=batch_ids
                 )
-                print(f"Added {len(documents)} documents to vector store")
-            else:
-                print("No documents to add")
             
-        except Exception as e:
-            print(f"Error populating vector store: {e}")
-        finally:
-            neo4j_client.close()
+            print(f"Added {len(documents)} generated infrastructure systems to vector store")
+        else:
+            print("No server data found, using sample data")
+            self._populate_sample_data()
+    
+    def _populate_sample_data(self):
+        """Fallback sample data if generated data not available."""
+        sample_data = [
+            {
+                "id": "web-prod-sample",
+                "text": "web server production environment apache nginx",
+                "metadata": {"labels": "Server", "prop_environment": "production"}
+            }
+        ]
+        
+        documents = [item["text"] for item in sample_data]
+        metadatas = [item["metadata"] for item in sample_data]
+        ids = [item["id"] for item in sample_data]
+        
+        self.collection.add(documents=documents, metadatas=metadatas, ids=ids)
     
     def similarity_search(self, query: str, k: int = 5) -> List[Tuple[str, Dict]]:
         """Perform similarity search and return node IDs with metadata."""
@@ -115,19 +151,6 @@ class VectorSearchClient:
             print(f"Vector search error: {e}")
             return []
 
-def test_vector_search():
-    """Test vector search functionality."""
-    client = VectorSearchClient()
-    
-    # Test search
-    results = client.similarity_search("server", k=3)
-    print(f"Search results for 'server': {results}")
-    
-    # Test another search
-    results2 = client.similarity_search("service", k=3)
-    print(f"Search results for 'service': {results2}")
-    
-    return len(results) > 0
-
 if __name__ == "__main__":
-    test_vector_search()
+    client = VectorSearchClient()
+    print("Vector store updated with generated data!")

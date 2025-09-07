@@ -1,48 +1,23 @@
-from typing import TypedDict, List, Dict, Any, Literal, Optional
-from pydantic import BaseModel
+from typing import TypedDict, List, Dict, Any, Literal, Optional, Annotated
+from langgraph.graph.message import add_messages
 
-class GraphState(TypedDict, total=False):
-    """
-    Represents the state of the GraphRAG workflow.
-    
-    Attributes:
-        question: Original user question
-        documents: Results from graph or vector queries
-        article_ids: Node IDs from vector search (for context)
-        next: Next node to execute
-        subqueries: Decomposed query parts
-        query_type: Routing decision
-        context: Additional context for prompting
-        response: Final generated response
-    """
-    question: str
-    documents: Dict[str, Any]
-    article_ids: List[str]
-    next: Literal["router", "vector_search", "graph_query", "decomposer", "response_generator", "done"]
-    subqueries: List[str]
-    query_type: Literal["vector_search", "graph_query"]
-    context: str
-    response: str
+class AppState(TypedDict, total=False):
+    # Use Annotated + add_messages to append instead of overwrite
+    messages: Annotated[List[Dict[str, Any]], add_messages]
+    facts: Dict[str, Any]
+    artifacts: Dict[str, Any]
+    missing_fields: List[str]
+    next: Literal["data_domain", "security_domain", "performance_domain", "compliance_domain", "learning_domain", "done"]
+    is_complete: bool
+    meta: Dict[str, Any]
 
-def create_initial_state(question: str) -> GraphState:
-    """Create initial state for a new query."""
+def initial_state(user_input: Optional[str] = None) -> AppState:
     return {
-        "question": question,
-        "documents": {},
-        "article_ids": [],
-        "next": "router",
-        "subqueries": [],
-        "context": "",
-        "response": ""
+        "messages": ([{"role": "user", "content": user_input}] if user_input else []),
+        "facts": {},
+        "artifacts": {},
+        "missing_fields": [],
+        "next": "data_domain",
+        "is_complete": False,
+        "meta": {"run_id": "temp", "step_count": 0}
     }
-
-# Pydantic models for structured outputs
-class RouteDecision(BaseModel):
-    """Router decision model."""
-    query_type: Literal["vector_search", "graph_query"]
-    reasoning: str
-
-class SubQuery(BaseModel):
-    """Decomposed query model."""
-    sub_query: str
-    query_type: Literal["vector", "graph"]

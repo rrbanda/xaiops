@@ -3,11 +3,12 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from langgraph.graph import StateGraph, START, END, MessagesState
-from app.agents.subgraphs import (
+from app.graphs.domain_subgraphs import (
     create_data_subgraph, create_security_subgraph,
     create_performance_subgraph, create_compliance_subgraph,
     create_learning_subgraph
 )
+from app.graphs.rca_subgraph import create_rca_subgraph
 from app.llm_config import get_llm
 
 def create_supervisor():
@@ -26,11 +27,13 @@ def create_supervisor():
         - security_domain  
         - performance_domain
         - compliance_domain
+        - rca_domain
         
         For security vulnerabilities, threats, or security analysis: security_domain
         For server lists or infrastructure data: data_domain
         For performance monitoring: performance_domain
         For audits or compliance: compliance_domain
+        For incident analysis, troubleshooting, or root cause analysis: rca_domain
         
         Respond with ONLY the domain name. No explanation.
         """
@@ -39,7 +42,7 @@ def create_supervisor():
         domain = result.content.strip().lower().replace(" ", "_")
         
         # Ensure valid domain
-        valid_domains = ["data_domain", "security_domain", "performance_domain", "compliance_domain", "learning_domain"]
+        valid_domains = ["data_domain", "security_domain", "performance_domain", "compliance_domain", "learning_domain", "rca_domain"]
         if domain not in valid_domains:
             domain = "data_domain"
         
@@ -58,6 +61,7 @@ def create_supervisor():
     workflow.add_node("performance_domain", create_performance_subgraph())
     workflow.add_node("compliance_domain", create_compliance_subgraph())
     workflow.add_node("learning_domain", create_learning_subgraph())
+    workflow.add_node("rca_domain", create_rca_subgraph())
     
     workflow.add_edge(START, "supervisor")
     workflow.add_conditional_edges(
@@ -68,7 +72,8 @@ def create_supervisor():
             "security_domain": "security_domain", 
             "performance_domain": "performance_domain",
             "compliance_domain": "compliance_domain",
-            "learning_domain": "learning_domain"
+            "learning_domain": "learning_domain",
+            "rca_domain": "rca_domain"
         }
     )
     
@@ -78,5 +83,6 @@ def create_supervisor():
     workflow.add_edge("performance_domain", END)
     workflow.add_edge("compliance_domain", END)
     workflow.add_edge("learning_domain", END)
+    workflow.add_edge("rca_domain", END)
     
     return workflow.compile()
