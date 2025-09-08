@@ -5,16 +5,38 @@ import json
 from pathlib import Path
 
 class VectorSearchClient:
-    def __init__(self, collection_name: str = "infrastructure_embeddings"):
+    def __init__(self, collection_name: str = "infrastructure_embeddings", lazy_init: bool = False):
         self.client = chromadb.Client(Settings(persist_directory="./chroma_db"))
         self.collection_name = collection_name
         self.collection = None
-        self._ensure_collection()
+        self._initialized = False
+        self.lazy_init = lazy_init
+        
+        if not lazy_init:
+            self._ensure_collection()
     
-    def _ensure_collection(self):
-        """Create or get collection."""
+    def ensure_initialized(self):
+        """Ensure vector store is initialized - only loads data once."""
+        if self._initialized:
+            return
+            
         try:
-            # Delete old collection to refresh with new data
+            # Try to get existing collection first
+            try:
+                self.collection = self.client.get_collection(name=self.collection_name)
+                print(f"Found existing collection: {self.collection_name}")
+                # Check if collection has data
+                count = self.collection.count()
+                if count > 0:
+                    print(f"Using existing collection with {count} documents")
+                    self._initialized = True
+                    return
+                else:
+                    print("Collection exists but is empty, repopulating...")
+            except:
+                print(f"Collection {self.collection_name} not found, creating new one...")
+            
+            # Create or recreate collection
             try:
                 self.client.delete_collection(name=self.collection_name)
             except:
@@ -23,8 +45,20 @@ class VectorSearchClient:
             print(f"Creating new collection: {self.collection_name}")
             self.collection = self.client.create_collection(name=self.collection_name)
             self._populate_from_generated_data()
+            self._initialized = True
+            
         except Exception as e:
-            print(f"Error creating collection: {e}")
+            print(f"Error initializing collection: {e}")
+            # Create empty collection as fallback
+            try:
+                self.collection = self.client.create_collection(name=self.collection_name)
+                self._initialized = True
+            except:
+                pass
+    
+    def _ensure_collection(self):
+        """Legacy method for backwards compatibility."""
+        self.ensure_initialized()
     
     def _populate_from_generated_data(self):
         """Populate with actual generated infrastructure data."""
@@ -134,6 +168,13 @@ class VectorSearchClient:
     def similarity_search(self, query: str, k: int = 5) -> List[Tuple[str, Dict]]:
         """Perform similarity search and return node IDs with metadata."""
         try:
+            # Ensure we're initialized before searching
+            self.ensure_initialized()
+            
+            if not self.collection:
+                print("Vector collection not available")
+                return []
+            
             results = self.collection.query(
                 query_texts=[query],
                 n_results=k
@@ -152,5 +193,10 @@ class VectorSearchClient:
             return []
 
 if __name__ == "__main__":
-    client = VectorSearchClient()
-    print("Vector store updated with generated data!")
+    # Test the lazy initialization
+    client = VectorSearchClient(lazy_init=True)
+    print("Vector client created with lazy initialization")
+    
+    # Force initialization
+    client.ensure_initialized()
+    print("Vector store initialized with generated data!")

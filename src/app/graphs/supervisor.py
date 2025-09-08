@@ -13,7 +13,7 @@ from app.graphs.a2a_orchestrator_subgraph import create_a2a_orchestrator_subgrap
 
 def extract_user_query(state):
     """Helper function to safely extract user query from state"""
-    first_message = state["messages"][0]
+    first_message = state["messages"][-1]
     
     if isinstance(first_message, dict):
         content = first_message.get("content", "")
@@ -43,7 +43,7 @@ def create_supervisor():
             return "a2a_orchestrator_domain"
         
         # Internal ops domain routing (your existing working logic)
-        if any(word in query_lower for word in ["security", "vulnerability", "vulnerabilities", "threat", "threats", "compliance"]):
+        if any(word in query_lower for word in ["security", "vulnerability", "vulnerabilities", "threat", "threats", "compliance", "cve", "ssh", "disable", "enable", "block", "allow", "patch", "remove", "delete", "modify"]):
             print(f"DEBUG: Security domain routing")
             return "security_domain"
         elif any(word in query_lower for word in ["incident", "rca", "troubleshoot", "analyze", "investigation", "root cause"]):

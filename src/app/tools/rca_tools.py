@@ -168,9 +168,10 @@ def dependency_traversal_query(affected_system: str, max_depth: int = 3) -> str:
 def similarity_search_analysis(search_query: str, top_k: int = 5) -> str:
     """Find similar patterns using semantic search."""
     try:
-        from app.tools.vector_search import VectorSearchClient
+        # Import and use the global vector client from data_tools
+        from app.tools.data_tools import get_vector_client
         
-        client = VectorSearchClient()
+        client = get_vector_client()
         results = client.similarity_search(search_query, k=top_k)
         
         if not results:

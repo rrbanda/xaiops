@@ -10,7 +10,7 @@ from langgraph.graph import StateGraph, START, END, MessagesState
 
 def extract_user_query(state):
     """Helper function to safely extract user query from state"""
-    first_message = state["messages"][0]
+    first_message = state["messages"][-1]
     
     if isinstance(first_message, dict):
         content = first_message.get("content", "")
