@@ -12,6 +12,9 @@ Requires-Dist: python-dotenv>=1.0.0
 Requires-Dist: chromadb>=0.4.0
 Requires-Dist: tiktoken>=0.7.0
 Requires-Dist: httpx>=0.25.0
+Requires-Dist: a2a-sdk<0.3.0,>=0.2.6
+Requires-Dist: fastapi>=0.104.0
+Requires-Dist: uvicorn[standard]>=0.24.0
 Provides-Extra: dev
 Requires-Dist: pytest>=7.0.0; extra == "dev"
 Requires-Dist: pytest-asyncio>=0.21.0; extra == "dev"
