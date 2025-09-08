@@ -120,7 +120,7 @@ graph TD
     
     subgraph "Security Domain"
         SA1[security_analysis] --> SA2{HITL Check}
-        SA2 -->|Approval Required| SA3[interrupt() - Pause for Human Input]
+        SA2 -->|Approval Required| SA3[Interrupt for Human Input]
         SA2 -->|Approved| SA4[Continue Analysis]
     end
     
