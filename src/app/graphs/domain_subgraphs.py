@@ -30,79 +30,50 @@ def extract_user_query(state):
 def create_data_subgraph():
     """Fixed data subgraph with specialized agent roles."""
     
-    def graph_collector_node(state):
-        """Pure agentic data collection - agent decides query approach autonomously."""
-        original_query = extract_user_query(state)
-        
-        # Create agent that autonomously decides query parameters
-        graph_agent = create_react_agent(
-            model=get_llm(),
-            tools=[neo4j_query_tool],
-            prompt=(
-                "You are a database expert analyzing infrastructure queries.\n\n"
-                "Use neo4j_query_tool to answer the user's question. YOU decide the best approach:\n"
-                "- Which query_type fits their intent (systems, services, vulnerabilities, events, dependencies, overview)\n"
-                "- What search_term to use (if any)\n"
-                "- Appropriate limit for results\n\n"
-                "Guidelines:\n"
-                "- For questions about servers, nodes, machines, hosts, infrastructure → use 'systems'\n"
-                "- For questions about applications, services, processes → use 'services'\n"
-                "- For security, vulnerabilities, CVEs → use 'vulnerabilities'\n"
-                "- For incidents, alerts, logs → use 'events'\n"
-                "- For connections, relationships → use 'dependencies'\n"
-                "- For counts ('how many'), provide the count and brief summary\n"
-                "- For environment-specific queries (production, staging, dev), include in search_term\n\n"
-                "Return clean, factual data from the database."
-            ),
-            name="graph_collector",
-        )
-        
-        # Let agent decide everything autonomously
-        graph_result = graph_agent.invoke({"messages": [{"role": "user", "content": original_query}]})
-        graph_findings = graph_result["messages"][-1].content
-        
-        return {
-            "messages": [
-                {"role": "assistant", "content": graph_findings, "name": "graph_collector"}
-            ]
-        }
+    # Create agents once at subgraph creation time
+    graph_agent = create_react_agent(
+        model=get_llm(),
+        tools=[neo4j_query_tool],
+        prompt=(
+            "You are a database expert analyzing infrastructure queries.\n\n"
+            "Use neo4j_query_tool to answer the user's question. YOU decide the best approach:\n"
+            "- Which query_type fits their intent (systems, services, vulnerabilities, events, dependencies, overview)\n"
+            "- What search_term to use (if any)\n"
+            "- Appropriate limit for results\n\n"
+            "Guidelines:\n"
+            "- For questions about servers, nodes, machines, hosts, infrastructure → use 'systems'\n"
+            "- For questions about applications, services, processes → use 'services'\n"
+            "- For security, vulnerabilities, CVEs → use 'vulnerabilities'\n"
+            "- For incidents, alerts, logs → use 'events'\n"
+            "- For connections, relationships → use 'dependencies'\n"
+            "- For counts ('how many'), provide the count and brief summary\n"
+            "- For environment-specific queries (production, staging, dev), include in search_term\n\n"
+            "Return clean, factual data from the database."
+        ),
+        name="graph_collector",
+    )
     
-    def context_enhancer_node(state):
-        """Pure agentic context enhancement - agent decides search approach autonomously."""
-        original_query = extract_user_query(state)
-        
-        # Create agent that autonomously decides vector search strategy
-        vector_agent = create_react_agent(
-            model=get_llm(),
-            tools=[vector_search_tool],
-            prompt=(
-                "You are a semantic search expert specializing in pattern recognition and similarity analysis.\n\n"
-                "Use vector_search_tool to find patterns and context related to the user's question. "
-                "YOU decide the best search strategy:\n"
-                "- What search terms to use for finding similar infrastructure patterns\n"
-                "- How many results (top_k) to retrieve based on analysis needs\n"
-                "- What patterns and relationships to highlight\n\n"
-                "Guidelines for effective searches:\n"
-                "- For infrastructure questions → search for 'server configuration production environment'\n"
-                "- For security questions → search for 'security vulnerability configuration'\n"  
-                "- For service questions → search for 'service monitoring application'\n"
-                "- For troubleshooting → search for 'incident outage performance issue'\n"
-                "- For counts/inventory → search for relevant entity types and environments\n\n"
-                "Focus on finding similar configurations, related systems, patterns, and contextual information "
-                "that complement the primary data analysis. Provide insights about discovered patterns and relationships."
-            ),
-            name="context_enhancer",
-        )
-        
-        # Let agent decide search strategy autonomously
-        vector_result = vector_agent.invoke({"messages": [{"role": "user", "content": original_query}]})
-        vector_findings = vector_result["messages"][-1].content
-        
-        return {
-            "messages": [
-                {"role": "assistant", "content": vector_findings, "name": "context_enhancer"}
-            ]
-        }
+    vector_agent = create_react_agent(
+        model=get_llm(),
+        tools=[vector_search_tool],
+        prompt=(
+            "You are a semantic search expert specializing in pattern recognition and similarity analysis.\n\n"
+            "Use vector_search_tool to find patterns and context related to the user's question. "
+            "YOU decide the best search strategy:\n"
+            "- What search terms to use for finding similar infrastructure patterns\n"
+            "- How many results (top_k) to retrieve based on analysis needs\n"
+            "- What patterns and relationships to highlight\n\n"
+            "Guidelines for effective searches:\n"
+            "- For infrastructure questions → search for 'server configuration production environment'\n"
+            "- For security questions → search for 'security vulnerability configuration'\n"  
+            "- For service questions → search for 'service monitoring application'\n"
+            "- For troubleshooting → search for 'incident outage performance issue'\n"
+            "- For counts/inventory → search for relevant entity types and environments\n\n"
+            "Focus on finding similar configurations, related systems, patterns, and contextual information "
+            "that complement the primary data analysis. Provide insights about discovered patterns and relationships."
+        ),
+        name="context_enhancer",
+    )
     
     def synthesis_node(state):
         """Combine structured data with contextual insights."""
@@ -152,8 +123,8 @@ def create_data_subgraph():
     
     # Build workflow: Primary data → Context enhancement → Synthesis
     workflow = StateGraph(MessagesState)
-    workflow.add_node("graph_collector", graph_collector_node)
-    workflow.add_node("context_enhancer", context_enhancer_node)
+    workflow.add_node("graph_collector", graph_agent)
+    workflow.add_node("context_enhancer", vector_agent)
     workflow.add_node("synthesis", synthesis_node)
     
     workflow.add_edge(START, "graph_collector")

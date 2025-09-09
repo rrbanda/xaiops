@@ -5,7 +5,7 @@ Smart Orchestrator using proper A2A SDK
 import asyncio
 import logging
 import uuid
-from typing import Dict
+from typing import Dict, TypedDict, List, Any, Optional
 
 import httpx
 import uvicorn
@@ -28,8 +28,19 @@ from a2a.utils.errors import ServerError
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class RouterState(dict):
-    pass
+class RouterState(TypedDict, total=False):
+    """State for the orchestrator workflow"""
+    request: Optional[str]
+    query: Optional[str] 
+    messages: Optional[List[dict]]
+    selected_agent: Optional[str]
+    confidence: Optional[float]
+    reasoning: Optional[str]
+    response: Optional[str]
+    success: Optional[bool]
+    agent_url: Optional[str]
+    agent_skills: Optional[List[str]]
+    analysis_details: Optional[str]
 
 class SmartOrchestrator:
     """Intelligent orchestrator using proper A2A SDK"""
@@ -73,68 +84,184 @@ class SmartOrchestrator:
         return workflow.compile()
     
     async def _analyze_request(self, state):
-        """Analyze request and select best agent"""
+        """Analyze request and select best agent using sophisticated skill matching"""
+        logger.info(f"_analyze_request called with state: {state}")
+        
         # Ensure agents are initialized
         await self.initialize_agents()
         
-        request = state["request"]
+        # Extract request from multiple possible state formats
+        request = None
+        if "request" in state:
+            request = state["request"]
+            logger.info(f"Found request in state: {request}")
+        elif "query" in state:
+            request = state["query"]
+            logger.info(f"Found query in state: {request}")
+        elif "messages" in state and len(state["messages"]) > 0:
+            # Extract from LangGraph messages format
+            last_message = state["messages"][-1]
+            if isinstance(last_message, dict):
+                request = last_message.get("content", "")
+            else:
+                request = getattr(last_message, 'content', "")
+            logger.info(f"Extracted from messages: {request}")
+        else:
+            # Fallback for unexpected state format
+            request = str(state)
+            logger.warning(f"Unexpected state format, using string representation: {state}")
+        
+        if not request:
+            logger.error("No request content found in state")
+            request = "empty request"
+        
+        # Sophisticated agent selection using registered agent skills
         best_agent = None
         best_score = 0.0
         
         request_lower = request.lower()
+        logger.info(f"Analyzing request: '{request_lower}' against {len(self.agents)} agents")
         
         for agent_name, agent_card in self.agents.items():
             score = 0
+            matched_skills = []
+            
             for skill in agent_card.skills:
+                skill_score = 0
                 for tag in (skill.tags or []):
                     if tag.lower() in request_lower:
-                        score += 1
+                        skill_score += 1
+                        matched_skills.append(tag)
+                        logger.info(f"Agent '{agent_name}' skill '{skill.name}' matched tag '{tag}'")
+                
+                score += skill_score
             
             if score > best_score:
                 best_score = score
                 best_agent = agent_name
+                logger.info(f"New best agent: {agent_name} (score: {score}, skills: {matched_skills})")
         
-        # Default routing logic
-        if not best_agent:
-            if any(word in request_lower for word in ["server", "infrastructure", "database", "rca"]):
+        # Enhanced default routing logic with better keyword detection
+        if not best_agent or best_score == 0:
+            logger.info("No skill matches found, using enhanced keyword routing")
+            
+            if any(word in request_lower for word in ["server", "infrastructure", "database", "rca", "incident", "troubleshoot"]):
                 best_agent = "Ops Infrastructure Agent"
-            elif any(word in request_lower for word in ["search", "news", "current", "latest"]):
+                best_score = 0.7
+                logger.info("Keyword routing to Ops Infrastructure Agent")
+            elif any(word in request_lower for word in ["search", "news", "current", "latest", "kubernetes", "web", "internet"]):
                 best_agent = "Web Search Agent"
+                best_score = 0.8
+                logger.info("Keyword routing to Web Search Agent")
             else:
                 best_agent = "Ops Infrastructure Agent"  # Default fallback
+                best_score = 0.5
+                logger.info("Default fallback to Ops Infrastructure Agent")
         
-        state.update({
+        confidence = min(best_score / 3.0, 1.0) if best_score > 0 else 0.5
+        reasoning = f"Selected {best_agent} based on skill matching (score: {best_score}) and keyword analysis"
+        
+        result_state = {
             "selected_agent": best_agent,
-            "confidence": min(best_score / 3.0, 1.0),
-            "reasoning": f"Selected {best_agent} based on keyword matching (score: {best_score})"
-        })
+            "confidence": confidence,
+            "reasoning": reasoning,
+            "request": request,
+            "analysis_details": f"Processed {len(self.agents)} agents, best score: {best_score}"
+        }
+        
+        # Update state while preserving existing keys
+        state.update(result_state)
+        
+        logger.info(f"_analyze_request completed: {result_state}")
         return state
     
     async def _route_to_agent(self, state):
-        """Route request to selected agent"""
+        """Route request to selected agent with detailed information"""
         selected_agent = state["selected_agent"]
         request = state["request"]
+        confidence = state.get("confidence", 0)
+        reasoning = state.get("reasoning", "")
+        
+        logger.info(f"_route_to_agent: Routing '{request}' to '{selected_agent}'")
         
         agent_card = self.agents.get(selected_agent)
         if not agent_card:
-            state["response"] = f"Agent {selected_agent} not available"
+            error_msg = f"Agent {selected_agent} not available"
+            logger.error(error_msg)
+            state["response"] = error_msg
+            state["success"] = False
             return state
         
-        state["response"] = f"Successfully routed to {selected_agent} at {agent_card.url}"
+        # Provide detailed routing information
+        agent_skills = [skill.name for skill in agent_card.skills]
+        
+        response = f"✅ Successfully routed to {selected_agent}\n"
+        response += f"🎯 Confidence: {confidence:.2f}\n"
+        response += f"🧠 Reasoning: {reasoning}\n"
+        response += f"🔗 Agent URL: {agent_card.url}\n"
+        response += f"🛠️ Available Skills: {', '.join(agent_skills)}\n"
+        response += f"📝 Analysis: {state.get('analysis_details', 'No additional details')}"
+        
+        state["response"] = response
+        state["success"] = True
+        state["agent_url"] = agent_card.url
+        state["agent_skills"] = agent_skills
+        
+        logger.info(f"_route_to_agent completed successfully for {selected_agent}")
         return state
     
     async def process_request(self, request: str) -> Dict:
-        """Process request through workflow"""
-        initial_state = {"request": request}
-        final_state = await self.workflow.ainvoke(initial_state)
+        """Process request through proper LangGraph workflow"""
+        # Ensure agents are initialized first
+        await self.initialize_agents()
         
-        return {
-            "success": True,
-            "selected_agent": final_state.get("selected_agent"),
-            "confidence": final_state.get("confidence", 0),
-            "reasoning": final_state.get("reasoning", ""),
-            "response": final_state.get("response", "No response")
-        }
+        logger.info(f"Processing request through LangGraph workflow: {request}")
+        
+        try:
+            # Properly format initial state for RouterState TypedDict
+            initial_state: RouterState = {
+                "request": request,
+                "query": request,
+                "messages": [{"role": "user", "content": request}]
+            }
+            
+            logger.info(f"Invoking workflow with state: {initial_state}")
+            
+            # Invoke the LangGraph workflow
+            final_state = await self.workflow.ainvoke(initial_state)
+            
+            logger.info(f"Workflow completed with state: {final_state}")
+            
+            return {
+                "success": True,
+                "selected_agent": final_state.get("selected_agent"),
+                "confidence": final_state.get("confidence", 0),
+                "reasoning": final_state.get("reasoning", ""),
+                "response": final_state.get("response", "No response")
+            }
+            
+        except Exception as e:
+            logger.error(f"Workflow execution error: {e}")
+            
+            # Fallback to simple routing if workflow fails
+            request_lower = request.lower()
+            
+            if any(word in request_lower for word in ["news", "latest", "current", "search", "kubernetes"]):
+                selected_agent = "Web Search Agent"
+                confidence = 0.6
+                reasoning = f"Fallback routing to Web Search Agent due to workflow error: {e}"
+            else:
+                selected_agent = "Ops Infrastructure Agent"
+                confidence = 0.4
+                reasoning = f"Fallback routing to Ops Infrastructure Agent due to workflow error: {e}"
+            
+            return {
+                "success": True,
+                "selected_agent": selected_agent,
+                "confidence": confidence,
+                "reasoning": reasoning,
+                "response": f"Workflow error fallback - routed to {selected_agent}"
+            }
 
 class OrchestratorAgentExecutor(AgentExecutor):
     """Orchestrator Agent Executor"""
@@ -159,25 +286,86 @@ class OrchestratorAgentExecutor(AgentExecutor):
             else:
                 raise ServerError(error=InvalidParamsError())
         
-        updater = TaskUpdater(event_queue, task.id, task.contextId)
+        updater = TaskUpdater(event_queue, task.id, task.context_id)
         
         try:
             await updater.update_status(
                 TaskState.working,
                 new_agent_text_message(
                     "Routing request to best agent...",
-                    task.contextId,
+                    task.context_id,
                     task.id,
                 ),
             )
             
             result = await self.orchestrator.process_request(query)
             
-            response_text = f"Agent Selection Results:\n"
-            response_text += f"Selected Agent: {result.get('selected_agent')}\n"
-            response_text += f"Confidence: {result.get('confidence'):.2f}\n"
-            response_text += f"Reasoning: {result.get('reasoning')}\n"
-            response_text += f"Result: {result.get('response')}"
+            if result.get("success", False) and result.get("selected_agent") == "Web Search Agent":
+                # Actually call the Web Search Agent
+                await updater.update_status(
+                    TaskState.working,
+                    new_agent_text_message(
+                        f"Forwarding to Web Search Agent for web search...",
+                        task.context_id,
+                        task.id,
+                    ),
+                )
+                
+                try:
+                    # Call the Web Search Agent directly
+                    agent_url = "http://localhost:8002"
+                    payload = {
+                        "jsonrpc": "2.0",
+                        "id": str(uuid.uuid4()),
+                        "method": "message/send",
+                        "params": {
+                            "message": {
+                                "role": "user",
+                                "messageId": str(uuid.uuid4()),
+                                "contextId": str(uuid.uuid4()),
+                                "parts": [{"type": "text", "text": query}]
+                            },
+                            "configuration": {"acceptedOutputModes": ["text"]}
+                        }
+                    }
+                    
+                    async with httpx.AsyncClient(timeout=60.0) as client:
+                        response = await client.post(agent_url, json=payload)
+                        response.raise_for_status()
+                        agent_result = response.json()
+                        
+                        logger.info(f"Web Search Agent response: {agent_result}")
+                        
+                        # Extract the actual web search result
+                        if "result" in agent_result and "artifacts" in agent_result["result"]:
+                            artifacts = agent_result["result"]["artifacts"]
+                            for artifact in artifacts:
+                                parts = artifact.get("parts", [])
+                                for part in parts:
+                                    if part.get("kind") == "text":
+                                        web_search_result = part.get("text", "No search results")
+                                        break
+                                else:
+                                    continue
+                                break
+                            else:
+                                web_search_result = "No search results found"
+                        else:
+                            web_search_result = f"Agent response: {str(agent_result)[:500]}..."
+                        
+                        response_text = f"🔍 Web Search Results:\n\n{web_search_result}"
+                
+                except Exception as e:
+                    logger.error(f"Error calling Web Search Agent: {e}")
+                    response_text = f"❌ Error contacting Web Search Agent: {str(e)}"
+            else:
+                # For other agents or errors, show routing information
+                response_text = f"🎯 Agent Selection Results:\n"
+                response_text += f"Selected Agent: {result.get('selected_agent')}\n"
+                response_text += f"Confidence: {result.get('confidence'):.2f}\n"
+                response_text += f"Reasoning: {result.get('reasoning')}\n"
+                if not result.get("success", False):
+                    response_text += f"Error: {result.get('error', 'Unknown error')}"
             
             await updater.add_artifact(
                 [Part(root=TextPart(text=response_text))],

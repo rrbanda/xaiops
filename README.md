@@ -36,13 +36,13 @@ The system follows a sophisticated multi-agent architecture with intelligent rou
 graph TD
     A[__start__] --> B[supervisor]
     
-    B -->|LLM Routing Decision| C[data_domain]
-    B -->|LLM Routing Decision| D[security_domain]
-    B -->|LLM Routing Decision| E[performance_domain]
-    B -->|LLM Routing Decision| F[compliance_domain]
-    B -->|LLM Routing Decision| G[learning_domain]
-    B -->|LLM Routing Decision| H[rca_domain]
-    B -->|LLM Routing Decision| I[a2a_orchestrator_domain]
+    B -->|Keyword-Based Routing| C[data_domain]
+    B -->|Keyword-Based Routing| D[security_domain]
+    B -->|Keyword-Based Routing| E[performance_domain]
+    B -->|Keyword-Based Routing| F[compliance_domain]
+    B -->|Keyword-Based Routing| G[learning_domain]
+    B -->|Keyword-Based Routing| H[rca_domain]
+    B -->|Keyword-Based Routing| I[a2a_orchestrator_domain]
     
     C --> J[__end__]
     D --> J
@@ -70,91 +70,202 @@ graph TD
 graph TD
     A[User Query] --> B[supervisor_node]
     B --> C[extract_user_query - Multi-turn Support]
-    C --> D[build_conversation_context]
-    D --> E{Try LLM Structured Routing}
+    C --> D[route_query - Keyword Analysis]
     
-    E -->|Success| F[RouteDecision with reasoning]
-    E -->|Exception| G[Context-Aware Fallback]
+    D -->|latest, current, recent, news, today, search, web| E[a2a_orchestrator_domain]
+    D -->|security, vulnerability, threat, cve, ssh, disable, patch| F[security_domain]
+    D -->|incident, rca, troubleshoot, investigate, root cause| G[rca_domain]
+    D -->|performance, monitor, metric, optimization| H[performance_domain]
+    D -->|compliance, audit, policy, regulation| I[compliance_domain]
+    D -->|learn, pattern, knowledge, update| J[learning_domain]
+    D -->|Default: servers, count, infrastructure, etc.| K[data_domain]
     
-    F --> H{Route to Domain}
-    G --> I{Check Conversation Context}
+    E --> L[Execute A2A External Agent Coordination]
+    F --> M[Execute Security Analysis with HITL]
+    G --> N[Execute Root Cause Analysis]
+    H --> O[Execute Performance Monitoring]
+    I --> P[Execute Compliance Auditing]
+    J --> Q[Execute Knowledge Extraction]
+    K --> R[Execute Data Infrastructure Analysis]
     
-    I -->|Security + Approval| J[security_domain]
-    I -->|RCA + Approval| K[rca_domain]
-    I -->|No Context Match| L[Enhanced Keyword Analysis]
-    
-    L -->|vulnerability, threat, cve, ssh, disable, patch| J
-    L -->|incident, troubleshoot, rca| K
-    L -->|performance, monitor, capacity| M[performance_domain]
-    L -->|compliance, audit, policy| N[compliance_domain]
-    L -->|learn, pattern, knowledge| O[learning_domain]
-    L -->|external, latest, search| P[a2a_orchestrator_domain]
-    L -->|Default| Q[data_domain - Pure Agentic]
-    
-    H --> R[Execute Domain Workflow with Agent Reasoning]
-    J --> R
-    K --> R
-    M --> R
-    N --> R
-    O --> R
-    P --> R
-    Q --> R
-    
-    style E fill:#f3e5f5
-    style F fill:#e8f5e8
-    style G fill:#fff3e0
-    style I fill:#ffebee
-    style L fill:#fce4ec
+    style A fill:#e1f5fe
+    style B fill:#f3e5f5
     style C fill:#e1f5fe
-    style Q fill:#e8f5e8
+    style D fill:#fff3e0
+    style E fill:#e8eaf6
+    style F fill:#ffebee
+    style G fill:#fce4ec
+    style H fill:#f1f8e9
+    style I fill:#fff8e1
+    style J fill:#f3e5f5
+    style K fill:#e8f5e8
 ```
 
 ### 📊 Domain Agent Architecture
 
 ```mermaid
 graph TD
-    subgraph "Data Domain"
-        DA1[graph_collector] --> DA2[context_enhancer]
-        DA2 --> DA3[synthesis_node]
+    subgraph "Data Domain - Hybrid RAG Pipeline"
+        DA1[graph_collector<br/>Neo4j Agent] --> DA2[context_enhancer<br/>Vector Agent]
+        DA2 --> DA3[synthesis_node<br/>LLM Fusion]
+        DA1 -.->|Sequential Execution| DA2
+        DA2 -.->|Combines Results| DA3
     end
     
     subgraph "Security Domain"
-        SA1[security_analysis] --> SA2{HITL Check}
+        SA1[security_agent<br/>ReAct Agent] --> SA2{HITL Check}
         SA2 -->|Approval Required| SA3[Interrupt for Human Input]
         SA2 -->|Approved| SA4[Continue Analysis]
     end
     
-    subgraph "RCA Domain"
-        RA1[discover_incidents] --> RA2[timeline_analysis]
-        RA2 --> RA3[dependency_traversal]
-        RA3 --> RA4[similarity_search]
+    subgraph "RCA Domain - Single Agent with Multiple Tools"
+        RA0[rca_agent<br/>Autonomous ReAct Agent]
+        RA0 --> RA1[discover_incidents]
+        RA0 --> RA2[rca_timeline_query]
+        RA0 --> RA3[dependency_traversal_query]
+        RA0 --> RA4[similarity_search_analysis]
+        RA0 --> RA5[neo4j_query_tool]
+        RA0 --> RA6[vector_search_tool]
     end
     
     subgraph "A2A Orchestrator"
-        AA1[extract_query] --> AA2[send_to_external_agents]
-        AA2 --> AA3[wait_for_completion]
-        AA3 --> AA4[return_response]
+        AA1[a2a_orchestrator_node] --> AA2[analyze_request<br/>Skill Matching]
+        AA2 --> AA3[route_to_agent<br/>Best Agent Selection]
+        AA3 --> AA4[wait_for_completion<br/>Response Handling]
     end
     
+    subgraph "Other Domains - Single Agent Pattern"
+        PA1[performance_agent<br/>ReAct Agent]
+        CA1[compliance_agent<br/>ReAct Agent]
+        LA1[learning_agent<br/>ReAct Agent]
+    end
+    
+    style DA1 fill:#e3f2fd
+    style DA2 fill:#f3e5f5
+    style DA3 fill:#e8f5e8
     style SA3 fill:#ffcdd2
-    style AA2 fill:#e8eaf6
+    style RA0 fill:#fff3e0
+    style AA1 fill:#e8eaf6
+```
+
+### 🏗️ Detailed Hybrid RAG Architecture
+
+```mermaid
+graph TD
+    subgraph "User Query Processing"
+        UQ[User Query] --> SV[Supervisor]
+        SV --> DD[Data Domain Router]
+    end
+    
+    subgraph "Data Domain - Sequential Hybrid RAG"
+        DD --> GC[graph_collector]
+        GC --> CE[context_enhancer] 
+        CE --> SN[synthesis_node]
+        
+        subgraph "Graph RAG Component"
+            GC --> NQ[neo4j_query_tool]
+            NQ --> NG[(Neo4j Knowledge Graph)]
+            NG --> GR[Structured Relationships<br/>Dependencies, Systems, Services]
+        end
+        
+        subgraph "Vector RAG Component"
+            CE --> VS[vector_search_tool]
+            VS --> CD[(ChromaDB Vector Store)]
+            CD --> VR[Semantic Patterns<br/>Similar Configurations, Contexts]
+        end
+        
+        subgraph "LLM Synthesis"
+            SN --> CR[Combined Results]
+            GR -.->|Primary Data| CR
+            VR -.->|Contextual Insights| CR
+            CR --> FR[Final Response]
+        end
+    end
+    
+    subgraph "Data Sources"
+        NG --> SYS[Systems: Servers, Infrastructure]
+        NG --> SVC[Services: Applications, Processes] 
+        NG --> VUL[Vulnerabilities: CVEs, Security]
+        NG --> EVT[Events: Incidents, Logs]
+        NG --> DEP[Dependencies: Relationships]
+        
+        CD --> EMB[Infrastructure Embeddings<br/>Generated from Neo4j metadata]
+        CD --> TXT[Searchable Text<br/>hostname + environment + type]
+    end
+    
+    subgraph "Agent Decision Making"
+        AGT1[Graph Agent<br/>Autonomous Query Strategy]
+        AGT2[Vector Agent<br/>Autonomous Search Strategy]
+        
+        AGT1 -.->|Decides: query_type, search_term, limit| NQ
+        AGT2 -.->|Decides: search_terms, top_k, patterns| VS
+    end
+    
+    style UQ fill:#e1f5fe
+    style DD fill:#fff3e0
+    style GC fill:#e3f2fd
+    style CE fill:#f3e5f5
+    style SN fill:#e8f5e8
+    style NG fill:#bbdefb
+    style CD fill:#f8bbd9
+    style CR fill:#c8e6c9
+    style AGT1 fill:#e1f5fe
+    style AGT2 fill:#fce4ec
+```
+
+### ⚙️ Technical Implementation Flow
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant S as Supervisor
+    participant GC as graph_collector
+    participant CE as context_enhancer 
+    participant SN as synthesis_node
+    participant N as Neo4j
+    participant C as ChromaDB
+    
+    U->>S: Query: "Count production servers"
+    S->>S: route_query() - Keyword Analysis
+    S->>GC: Route to data_domain
+    
+    Note over GC: Autonomous Agent Decision Making
+    GC->>GC: create_react_agent with neo4j_query_tool
+    GC->>GC: Agent decides: query_type="systems", search_term="production"
+    GC->>N: neo4j_query_tool(systems, production, 10)
+    N-->>GC: Structured Results: Server list + metadata
+    
+    GC->>CE: Sequential handoff with graph results
+    
+    Note over CE: Autonomous Agent Decision Making  
+    CE->>CE: create_react_agent with vector_search_tool
+    CE->>CE: Agent decides: search="server production environment", top_k=5
+    CE->>C: vector_search_tool(server production environment, 5)
+    C-->>CE: Semantic Results: Similar patterns + metadata
+    
+    CE->>SN: Sequential handoff with vector results
+    
+    Note over SN: LLM Synthesis
+    SN->>SN: Combine graph_data + context_data
+    SN->>SN: LLM synthesis with structured prompt
+    SN-->>U: Final Response: Count + context + insights
 ```
 
 ### 🧠 Intelligent Supervisor System
 
-**Multi-Tier Routing Strategy:**
-1. **Primary Route**: LLM-powered routing with Pydantic structured outputs and reasoning transparency
-2. **Context-Aware Fallback**: Conversation history analysis with domain continuity 
-3. **Enhanced Keyword Fallback**: Expanded security action recognition (ssh, disable, patch, cve) with guaranteed routing
-4. **Pure Agentic Execution**: Within domains, agents autonomously decide query parameters and strategies
+**Simple & Reliable Routing Strategy:**
+1. **Keyword-Based Routing**: Fast, deterministic routing based on content analysis
+2. **Multi-turn Support**: Proper message extraction (state["messages"][-1]) for conversation continuity
+3. **External Agent Integration**: Smart routing to A2A orchestrator for external data needs
+4. **Domain Specialization**: Direct routing to specialized agents based on query patterns
 
-**Advanced Features:**
-- **Multi-turn Conversation Handling**: Fixed message extraction (state["messages"][-1]) for seamless follow-ups
-- **Domain Continuity**: Routes follow-up questions to appropriate ongoing conversations
-- **Enhanced Security Routing**: Expanded action-oriented keyword recognition (ssh, disable, patch, cve)
+**Key Features:**
+- **Multi-turn Conversation Handling**: Fixed message extraction for seamless follow-ups
+- **External Data Routing**: Automatic detection of queries requiring external information (latest, current, news, search)
+- **Security Action Recognition**: Enhanced keyword detection for security operations (ssh, disable, patch, cve)
 - **Pure Agentic Domain Execution**: Within domains, agents autonomously decide query parameters and strategies
-- **Approval Flow Handling**: LangGraph interrupt() for proper Human-in-the-Loop workflows
-- **Error Resilience**: Graceful degradation through multiple fallback layers
+- **HITL Workflows**: LangGraph interrupt() for proper Human-in-the-Loop approval gates
+- **Default Fallback**: Intelligent fallback to data domain for infrastructure queries
 
 ### 🎯 Domain-Specialized Agents (7 Expert Systems)
 
@@ -166,7 +277,7 @@ graph TD
 | **Compliance Domain** | Regulatory adherence & auditing | Policy gap analysis, audit trails, regulatory mapping | Compliance frameworks, Documentation |
 | **Learning Domain** | Knowledge extraction & pattern analysis | Conversation analysis, best practice extraction, knowledge updates | Pattern recognition, Learning algorithms |
 | **RCA Domain** | Root cause analysis & incident response | Timeline correlation, dependency impact, incident analysis | Advanced graph traversal, Temporal analysis |
-| **A2A Orchestrator** | External system integration | Web search, real-time data, external agent coordination | A2A SDK, External APIs |
+| **A2A Orchestrator** | Intelligent external agent coordination | Sophisticated agent discovery, skill-based routing, confidence scoring, LlamaStack integration | A2A Protocol, LangGraph workflows, Agent capability matching |
 
 ### 🛠️ Technology Stack
 
@@ -233,9 +344,14 @@ LLM_MODEL_NAME=llama-4-scout-17b-16e-w4a16
 # Optional: Vector Store Configuration
 CHROMA_PERSIST_DIRECTORY=./chroma_db
 
-# Optional: A2A Configuration (for external agent integration)
+# A2A Configuration (for external agent integration)
 A2A_ORCHESTRATOR_URL=http://localhost:8000
 A2A_WEB_SEARCH_URL=http://localhost:8002
+
+# LlamaStack Configuration (for web search agent)
+LLAMASTACK_BASE_URL=https://lss-lss.apps.prod.rhoai.rh-aiservices-bu.com/v1
+LLAMASTACK_AGENT_ID=your-agent-id-here
+# Note: Update LLAMASTACK_AGENT_ID with your actual LlamaStack agent ID
 ```
 
 ### 3. Database Setup
@@ -255,15 +371,105 @@ A2A_WEB_SEARCH_URL=http://localhost:8002
 
 ### 4. Launch the System
 
+For the **complete multi-agent system** with A2A communication, you need to start **4 components** in separate terminals:
+
+#### **Terminal 1: A2A Orchestrator (Port 8000)**
 ```bash
-# Start the LangGraph development server
+cd /path/to/xaiops-graphrag
+python -m src.app.a2a_orchestrator
+```
+
+#### **Terminal 2: A2A Ops Server (Port 8001)**
+```bash
+cd /path/to/xaiops-graphrag
+python -m src.app.a2a_ops_server
+```
+
+#### **Terminal 3: LlamaStack A2A Agent (Port 8002)**
+```bash
+cd /path/to/xaiops-graphrag
+python -m src.app.llamastack_a2a_agent
+```
+
+#### **Terminal 4: LangGraph Development Server**
+```bash
+cd /path/to/xaiops-graphrag
 langgraph dev
 ```
 
-The system will be available at:
+### **🚀 System Availability**
+
+Once all components are running, the system will be available at:
 - **🌐 API Endpoints**: http://127.0.0.1:2024/docs
 - **🎨 LangGraph Studio**: https://smith.langchain.com/studio/?baseUrl=http://127.0.0.1:2024
 - **📊 Health Check**: http://127.0.0.1:2024/health
+- **🤖 A2A Orchestrator**: http://localhost:8000
+- **🔧 A2A Ops Agent**: http://localhost:8001
+- **🔍 A2A Web Search Agent**: http://localhost:8002
+
+### **⚡ Quick Start (Internal Only)**
+
+For **internal operations only** (without external web search), you can start just the LangGraph server:
+
+```bash
+langgraph dev
+```
+
+This will provide access to all internal domain agents (data, security, performance, compliance, learning, RCA) but not external web search capabilities.
+
+## 🤖 **Advanced A2A Orchestrator**
+
+The A2A (Agent-to-Agent) orchestrator implements sophisticated multi-agent coordination using LangGraph workflows and the A2A protocol:
+
+### **🧠 Intelligent Agent Selection**
+
+The orchestrator uses a **multi-phase selection process**:
+
+1. **Agent Discovery**: Automatically discovers and registers available agents
+2. **Skill Matching**: Analyzes query against agent skill tags (e.g., 'news', 'latest', 'security')
+3. **Confidence Scoring**: Calculates match confidence based on skill overlap
+4. **Best Agent Selection**: Routes to highest-scoring agent with detailed reasoning
+
+### **🎯 Agent Capabilities**
+
+**Web Search Agent** (LlamaStack Integration):
+- **Skills**: Web Search, Current Events
+- **Tags**: ['web', 'search', 'current', 'news', 'latest', 'internet', 'events', 'recent', 'today']
+- **Endpoint**: Real-time web search via LlamaStack
+- **Use Cases**: Latest news, current events, web searches
+
+**Ops Infrastructure Agent**:
+- **Skills**: Infrastructure Analysis, Security Analysis, RCA Investigation, Performance Monitoring
+- **Tags**: ['infrastructure', 'servers', 'systems', 'security', 'vulnerabilities', 'rca', 'incidents']
+- **Endpoint**: Internal LangGraph workflows
+- **Use Cases**: Infrastructure queries, security analysis, troubleshooting
+
+### **📊 Query Routing Examples**
+
+```
+Query: "Latest Kubernetes security news"
+→ Matches: Web Search Agent (tags: 'latest', 'news', 'security')
+→ Confidence: 1.0 (3 skill matches)
+→ Result: Real web search results via LlamaStack
+
+Query: "Count servers in production"
+→ Matches: Ops Infrastructure Agent (tags: 'servers', 'infrastructure')
+→ Confidence: 0.7 (2 skill matches)
+→ Result: Neo4j database query results
+```
+
+### **🔄 LangGraph Workflow**
+
+The orchestrator uses a sophisticated LangGraph workflow:
+
+```python
+workflow = StateGraph(RouterState)
+workflow.add_node("analyze", _analyze_request)  # Agent skill matching
+workflow.add_node("route", _route_to_agent)     # Execute selected agent
+workflow.add_edge("analyze", "route")
+```
+
+This provides **production-ready agent coordination** with proper state management, error handling, and response aggregation.
 
 ## 📖 Usage Examples
 
@@ -277,6 +483,30 @@ curl -X POST "http://127.0.0.1:2024/runs/wait" \
     "assistant_id": "xaiops",
     "input": {
       "messages": [{"role": "user", "content": "Count all servers in our infrastructure"}]
+    }
+  }'
+```
+
+### Web Search and External Data
+
+```bash
+# Get latest Kubernetes security news
+curl -X POST "http://127.0.0.1:2024/runs/wait" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "assistant_id": "xaiops",
+    "input": {
+      "messages": [{"role": "user", "content": "Latest Kubernetes security news"}]
+    }
+  }'
+
+# Search for current cloud security trends
+curl -X POST "http://127.0.0.1:2024/runs/wait" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "assistant_id": "xaiops",
+    "input": {
+      "messages": [{"role": "user", "content": "Current cloud security trends 2024"}]
     }
   }'
 ```
